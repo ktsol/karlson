@@ -1,0 +1,26 @@
+#Fan speed settings
+pwm_ok = 90
+pwm_min = 0
+pwm_max = 255
+
+# Temperature settings
+temp_ok = 65
+temp_hot = 75
+temp_crit = 85
+
+
+# Additional settings for devices in /sys/class/hwmon/hwmon???
+# This settings override defaults
+[[propellers]]
+idx = [0,3] # Each block can refer to several devices
+pwm_ok = 70
+temp_ok=69
+
+[[propellers]]
+idx = [1,2]
+pwm_ok = 120
+pwm_min = 10
+temp_ok = 56
+temp_hot = 60
+
+

@@ -1,0 +1,8 @@
+[package]
+name = "karlson"
+version = "0.1.0"
+authors = ["rumatoest"]
+
+[dependencies]
+toml = "0.4"
+getopts = "0.2"
