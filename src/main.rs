@@ -3,6 +3,7 @@
 use std::fs::File;
 use std::collections::VecDeque;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
 use std::io::Read;
@@ -425,7 +426,7 @@ fn prepare_settings(cfg: &Value) -> HashMap<i32, Settings> {
     let ccfg = cfg["propellers"].as_array().unwrap_or(&cempty);
 
     for c in ccfg {
-        if !c.is_table() {
+        if !c.is_table() || !c.as_table().unwrap().contains_key("idx") {
             continue;
         }
         let idx = c["idx"].as_array().unwrap_or(&cempty);
@@ -448,7 +449,19 @@ fn prepare_settings(cfg: &Value) -> HashMap<i32, Settings> {
 
 fn run_daemon(ctoml: &Value) {
     let cfg = prepare_settings(ctoml);
+    let idx_empty = Vec::new();
 
+    let idxs = match ctoml.as_table() {
+        Some(t) => match t.get("idx") {
+            Some(i) => i.as_array().unwrap_or(&idx_empty),
+            None => &idx_empty
+        },
+        None => &idx_empty
+    };
+    
+    let idxx: HashSet<i32> = idxs.iter().filter_map(|v| v.as_integer()).map(|v| v as i32).collect();
+
+    
     let base = Path::new(HWMONS);
     if !base.exists() || !base.is_dir() {
         print!("ERROR: Can not access or open directory {}", HWMONS);
@@ -462,25 +475,40 @@ fn run_daemon(ctoml: &Value) {
 
 
 
+    println!("{:?}", idxx);
     let mut karlsons: Vec<Karlson> = Vec::new();
     for p in paths {
         let idx = get_idx(p.path().to_str().unwrap());
 
+        if !idxx.is_empty() && !idxx.contains(&idx) {
+            println!("SKIP device {} not allowed in config", idx);
+            continue;
+        }
+
         let c: &Settings  = cfg.get(&idx).unwrap_or(cfg.get(&-1).unwrap());
         if DEBUG {
-            println!("ID{} {:?} {:?}", idx, p.path(), c);
+            println!("device {} {:?} {:?}", idx, p.path(), c);
         }
         let pr = Propeller::new_with_settings(&p.path(), &c);
         if !pr.valid {
             continue;
         }
         karlsons.push(Karlson::new(pr, &c));
+        println!("ADD device {}", idx);
     }
 
 
     loop {
         for k in &mut karlsons {
             k.spin();
+        }
+
+        if karlsons.is_empty() {
+            println!("(X_X) No devices was added to service. Just do nothing and sleep!");
+            if !idxx.is_empty() {
+                println!("Allowed devices ids {:?}", idxx);
+            }
+            std::thread::sleep(std::time::Duration::from_secs(10));
         }
         
         for _ in 0..20 {
@@ -513,9 +541,17 @@ fn main() {
     opts.optflag("h", "help", "print this help menu");
     opts.optopt("d", "daemon", "run daemon with settings from file", "SETTINGS.toml");
 
-    let matches = match opts.parse(&args[1..]) {
-        Ok(m) => { m }
-        Err(f) => { panic!(f.to_string()) }
+
+    let matches;
+    match opts.parse(&args[1..]) {
+        Ok(m) => {
+            matches = m;
+        },
+        Err(f) => {
+            println!("ERROR: {}\n", f.to_string());
+            print_help(&program, opts);
+            return;
+        }
     };
     
     if matches.opt_present("h") {

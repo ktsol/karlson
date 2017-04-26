@@ -1,3 +1,8 @@
+#Allowed devices indexes others wil be ignored
+#In a case if you have other unknown hwmon? devices
+#you can provide here idexes of devices to use
+#idx=[0,1,5]
+
 #Fan speed settings
 pwm_ok = 90
 pwm_min = 0
