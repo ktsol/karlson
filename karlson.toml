@@ -1,23 +1,23 @@
-#Allowed devices indexes others wil be ignored
-#In a case if you have other unknown hwmon? devices
-#you can provide here idexes of devices to use
-#idx=[0,1,5]
+# Allowed devices indexes others wil be ignored
+# You have to provide here idexes of devices to use
+# Empty value will skip auto detection, and [[propellers]] section would not work
+idx=[0,1,5]
 
-#Fan speed settings
+# Default fan speed for all propellers
 pwm_ok = 90
-pwm_min = 0
-pwm_max = 255
+pwm_min = 0 # Optional
+pwm_max = 255 # Optional
 
-# Temperature settings
+# Default temperature settings
 temp_ok = 65
 temp_hot = 75
 temp_crit = 85
 
 
-# Additional settings for devices in /sys/class/hwmon/hwmon???
-# This settings override defaults
+# Additional properties for autodetected devices
+# Would override default settings
 [[propellers]]
-idx = [0,3] # Each block can refer to several devices
+idx = [0,3] # Required value - indexes of devices you want apply this settings to
 pwm_ok = 70
 temp_ok=69
 
@@ -27,5 +27,20 @@ pwm_ok = 120
 pwm_min = 10
 temp_ok = 56
 temp_hot = 60
+
+
+# Custom devices you can create as many as you like
+# this devices may have custom temperature inputs and pwm files
+[[devices]]
+path = '/sys/class/hwmon/hwmon99' # Required - device path (where PWM file is located)
+pwm_ok = 100
+pwm_file = 'pwm2' # PWM file name
+
+# Temperature files to watch (absolute paths)
+# You can add as many as you like
+# Max temperature will be used as trigger to increase PWM
+# AVG for last N rounds will be used to decrease PWM
+temp_files=['temp1_input', '/sys/class/hwmon/hwmon0/temp1_input', '/sys/class/hwmon/hwmon1/temp2_input']
+
 
 

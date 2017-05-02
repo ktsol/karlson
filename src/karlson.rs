@@ -14,7 +14,7 @@ use toml::value::Table;
 
 pub static DIR_DEVICES: &'static str = "/sys/class/hwmon";
 static TEMP_SCALE: usize = 1000;
-static PWM_STEP: usize = 5;
+static PWM_STEP: isize = 5;
 
 
 pub fn read_file(p: &PathBuf) -> Result<String, Error> {
@@ -52,7 +52,7 @@ pub struct Settings {
     temp_ok: usize,
     temp_hot: usize,
     temp_crit: usize,
-    temp_file: PathBuf,
+    temp_files: Vec<PathBuf>,
     queue_size: usize,
     //temp_global: bool,
 }
@@ -72,7 +72,6 @@ pub struct Device {
     pub dir_name: String,
     dir_path: PathBuf,
     temp_files: Vec<PathBuf>,
-    //temp_global: bool,
     queue_size: usize,
     pub propeller: Option<Propeller>,
 }
@@ -108,8 +107,7 @@ impl Settings {
             temp_ok: 65,
             temp_hot: 75,
             temp_crit: 80,
-            temp_file: PathBuf::from("temp1_input"),
-            //temp_global: false,
+            temp_files: vec!(PathBuf::from("temp1_input")),
             queue_size: 15
         })
     }
@@ -119,6 +117,15 @@ impl Settings {
 
         let t:&Table = cfg.as_table().unwrap_or(vt.as_table().unwrap());
 
+        let tfiles:Vec<PathBuf> = if t.contains_key("temp_files") {
+            t["temp_files"].as_array().unwrap_or(&Vec::<Value>::new()).iter()
+                .filter_map(|v| v.as_str())
+                .map(|v| PathBuf::from(v))
+                .collect::<Vec<PathBuf>>()
+        } else {
+            s.temp_files.clone()
+        };
+        
         Settings {
             pwm_ok: t.get("pwm_ok").unwrap_or(&Value::from(s.pwm_ok as i64)).as_integer().unwrap() as usize,
             pwm_max: t.get("pwm_max").unwrap_or(&Value::from(s.pwm_max as i64)).as_integer().unwrap() as usize,
@@ -126,14 +133,11 @@ impl Settings {
             temp_ok: t.get("temp_ok").unwrap_or(&Value::from(s.temp_ok as i64)).as_integer().unwrap() as usize,
             temp_hot: t.get("temp_hot").unwrap_or(&Value::from(s.temp_hot as i64)).as_integer().unwrap() as usize,
             temp_crit: t.get("temp_crit").unwrap_or(&Value::from(s.temp_crit as i64)).as_integer().unwrap() as usize,
-            //temp_global: t.get("temp_global").unwrap_or(&Value::from(s.temp_global)).as_bool().unwrap(),
             queue_size: t.get("queue_size").unwrap_or(&Value::from(s.queue_size as i64)).as_integer().unwrap() as usize,
+            temp_files: tfiles,
             pwm_file: if t.contains_key("pwm_file") && t["pwm_file"].is_str() {
                 PathBuf::from(t["pwm_file"].as_str().unwrap())
             } else {s.pwm_file.clone()},
-            temp_file: if t.contains_key("temp_file") && t["temp_file"].is_str() {
-                PathBuf::from(t["temp_file"].as_str().unwrap())
-            } else {s.temp_file.clone()},
         }
     }
 }
@@ -246,16 +250,18 @@ impl Device {
         let mut npath = dir.clone();
         npath.push("name");
 
-        let mut tmps: Vec<PathBuf> = Vec::new();
 
-        let mut tpath = dir.clone();
-        tpath.push(s.temp_file.clone());
-        if tpath.is_file() {
-            tmps.push(tpath);
-        } else if cfg!(debug_assertions) {
-            println!("ERROR TEMP file not available {:?}", tpath);
+        let tpath = dir.clone();
+
+        let tmps = s.temp_files.iter()
+            .map(|p| tpath.clone().join(p).canonicalize())
+            .filter(|p| p.is_ok())
+            .map(|p| p.unwrap())
+            .collect::<Vec<PathBuf>>();
+        
+        if tmps.is_empty() && cfg!(debug_assertions) {
+            println!("ERROR TEMP files not available temp_files {:?}", s.temp_files);
         }
-
 
         let fval = read_file(&npath).unwrap_or(String::from("N/A"));
         
@@ -264,7 +270,6 @@ impl Device {
             dir_name: String::from(dir.file_name().and_then(|v| v.to_str()).unwrap_or("N/A")),
             dir_path: dir.clone(),
             temp_files: tmps,
-            temp_global: s.temp_global,
             queue_size: s.queue_size,
             propeller: Propeller::new(dir, s),
         }
@@ -297,6 +302,16 @@ impl Device {
     pub fn temps(&self) -> Vec<usize> {
         if self.temp_files.is_empty() {
             return Vec::new();
+        }
+
+        if cfg!(debug_assertions) {
+            let temps:Vec<String> = self.temp_files
+                .iter()
+                .map(|ref p| read_file_val(p, 0) / TEMP_SCALE)
+                .map(|it| format!("{}C", it)
+                ).collect();
+            
+            println!("DEBUG temps {} for {:?}", temps.join(", "), self.dir_path);
         }
 
         self.temp_files.iter()
@@ -364,12 +379,12 @@ impl Karlson {
             return
         }
 
-        let pwm_now = self.pwm_speed;
+        let pwm_now = self.pwm_speed as isize;
 
         if tmax <= self.jam.temp_ok {
             // Not hot at all. Only decrease temp here
             if tmax < self.jam.temp_ok {
-                if self.jam.temp_ok - tavg > 1 {
+                if self.jam.temp_ok as isize - tavg as isize > 1 {
                     self.pwm_update(pwm_now - PWM_STEP, tmax);
                 } else if self.pwm_speed > self.jam.pwm_ok {
                     self.pwm_update(pwm_now - PWM_STEP, tmax);
@@ -380,7 +395,7 @@ impl Karlson {
             if self.pwm_speed < self.jam.pwm_ok {
                 self.pwm_update(pwm_now + PWM_STEP, tmax);
             }
-            if self.pwm_speed > self.jam.pwm_ok && tavg < self.jam.temp_hot {
+            if self.pwm_speed > self.jam.pwm_ok && self.jam.temp_hot as isize - tavg as isize > 1 {
                 self.pwm_update(pwm_now - PWM_STEP, tmax);
             }
         } else {
@@ -388,7 +403,7 @@ impl Karlson {
             if self.pwm_speed < self.jam.pwm_ok {
                 // Just in case
                 let pwm_ok = self.jam.pwm_ok;
-                self.pwm_update(pwm_ok + PWM_STEP * 10, tmax);
+                self.pwm_update(pwm_ok as isize + PWM_STEP * 10, tmax);
             } else {
                 self.pwm_update(pwm_now + PWM_STEP * 2, tmax);
             }
@@ -397,33 +412,42 @@ impl Karlson {
         if tmax > self.jam.temp_crit {
             // If super hot, just set PWM at max
             let m = self.device.clone().propeller.unwrap().pwm_max;
-            self.pwm_update(m.clone(), tmax);
+            self.pwm_update(m.clone() as isize, tmax);
         }
     }
 
 
-    fn pwm_update(&mut self, pwm:usize, temp:usize) {
+    fn pwm_update(&mut self, pwm:isize, temp:usize) {
         if self.device.propeller.is_none() {
             println!("ERROR can not file propeller for device at {}",
                      self.device.dir_path.to_string_lossy().as_ref());
             return
         }
         
-        if pwm == self.pwm_speed || pwm < 0 {
+        if pwm == self.pwm_speed as isize || pwm < 0 {
             return
         }
+
+        let pwm_set = if pwm > 0 {
+            pwm as usize
+        } else {
+            0
+        };
         
-        match self.device.propeller.clone().unwrap().pwm_set(pwm) {
+        match self.device.propeller.clone().unwrap().pwm_set(pwm_set) {
             Ok(p) => {
+                let updated = if p != self.pwm_speed { true } else { false };
                 let ud = if self.pwm_speed > p { "DOWN" } else { "UP" };
                 self.pwm_speed = p;
-                println!("{} PWM {} to {} temp {}C {}",
-                         self.device.dir_name,
-                         ud,
-                         p,
-                         temp,
-                         self.device.propeller.clone().unwrap().pwm_file.to_str().as_ref().unwrap()
-                );
+                if updated {
+                    println!("{} PWM {} to {} temp {}C {}",
+                             self.device.dir_name,
+                             ud,
+                             p,
+                             temp,
+                             self.device.propeller.clone().unwrap().pwm_file.to_str().as_ref().unwrap()
+                    );
+                }
             },
             Err(e) => println!("ERROR {}", e)
         }

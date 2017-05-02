@@ -31,49 +31,72 @@ fn get_idx(s: &str) -> i32 {
     }
 }
 
-fn prepare_settings(cfg: &Value) -> HashMap<i32, Settings> {
+fn prepare_settings(cfg: &Value) -> (Settings, HashMap<i32, Settings>, Vec<(PathBuf, Settings)>) {
     let mut config: HashMap<i32, Settings> = HashMap::new();
-
-    if cfg.is_table() {
-        config.insert(-1, Settings::new(&cfg));
+    let mut cdevs = Vec::<(PathBuf, Settings)>::new();
+    let cdef = if cfg.is_table() {
+        Settings::new(&cfg)
     } else {
-        config.insert(-1, Settings::new(&Value::from(false)));
-    }
-    let dcfg: &Settings = &config[&-1].clone();
-
+        Settings::new(&Value::from(false))
+    };
     let cempty = Vec::new();
 
     let cfgs = cfg.get("propellers");
-    if cfgs.is_none() {
-        return config;
+    if cfgs.is_some() {
+        if !cfgs.unwrap().is_array() {
+            println!("ERROR in config! Wrong blocks format for [[propellers]]");
+        } else {
+            let ccfg = cfgs.unwrap().as_array().unwrap_or(&cempty);
+            
+            for c in ccfg {
+                if !c.is_table() || !c.as_table().unwrap().contains_key("idx") {
+                    continue;
+                }
+                let idx = c["idx"].as_array().unwrap_or(&cempty);
+                
+                for idv in idx {
+                    if !idv.is_integer() {
+                        continue;
+                    }
+                    let id = idv.as_integer().unwrap();
+                    if id >= 0  {
+                        config.insert(id as i32, Settings::new_with(&c, &cdef));
+                    }
+                }
+            }
+        }
     }
 
-    if !cfgs.unwrap().is_array() {
-        println!("Wrong config blocks [[propellers]]");
-        return config;
+    let cfgdev = cfg.get("devices");
+    if cfgdev.is_some() {
+        if !cfgdev.unwrap().is_array() {
+            println!("ERROR in config! Wrong blocks format for [[devices]]");
+        } else {
+            let dcfg = cfgdev.unwrap().as_array().unwrap_or(&cempty);
+            for c in dcfg {
+                if !c.is_table() {
+                    continue;
+                }
+                let t = c.as_table().unwrap();
+                if !t.contains_key("path") {
+                    println!("ERROR can not add [[devices]] without \"path\" property");
+                    continue;
+                }
+                let p = PathBuf::from(t["path"].as_str().unwrap_or_default());
+                if !p.is_dir() {
+                    println!("ERROR path for [[devices]] is not directory {:?}", p);
+                    continue;
+                }
+                if !t.contains_key("temp_files") || !t["temp_files"].is_array() {
+                    println!("ERROR can not add [[devices]] without valid \"temp_files\" property");
+                    continue;
+                }
+                cdevs.push( (p, Settings::new_with(&c, &cdef)) );
+            }
+        }
     }
     
-    let ccfg = cfgs.unwrap().as_array().unwrap_or(&cempty);
-
-    for c in ccfg {
-        if !c.is_table() || !c.as_table().unwrap().contains_key("idx") {
-            continue;
-        }
-        let idx = c["idx"].as_array().unwrap_or(&cempty);
-
-        for idv in idx {
-            if !idv.is_integer() {
-                continue;
-            }
-            let id = idv.as_integer().unwrap();
-            if id >= 0  {
-                //println!("ID {} {:?}", id, c);
-                
-                config.insert(id as i32, Settings::new_with(&c, dcfg));
-            }
-        }
-    }
-    return config;
+    (cdef, config, cdevs)
 }
 
 
@@ -90,7 +113,7 @@ fn format_info(devs:&Vec<Karlson>) -> String{
 }
 
 fn run_daemon(ctoml: &Value) {
-    let cfg = prepare_settings(ctoml);
+    let (cdef, cidx, cdevs) = prepare_settings(ctoml);
     let idx_empty = Vec::new();
 
     let idxs = match ctoml.as_table() {
@@ -130,17 +153,36 @@ fn run_daemon(ctoml: &Value) {
             continue;
         }
 
-        let c: &Settings  = cfg.get(&idx).unwrap_or(cfg.get(&-1).unwrap());
+        let c: &Settings  = cidx.get(&idx).unwrap_or(&cdef);
         if cfg!(debug_assertions) {
-            println!("device {} {:?} {:?}", idx, p.path(), c);
+            println!("PROPELLER {} {:?} {:?}", idx, p.path(), c);
         }
         let dev = Device::new(&p.path(), &c);
         if dev.propeller.is_none() {
+            println!("ERROR SKIP propeller {} pwm not found for {:?}", idx, p.path());
             continue;
         }
+        
         karlsons.push(Karlson::new(dev, &c));
         if cfg!(debug_assertions) {
-            println!("ADD device {}", idx);
+            println!("ADD propeller {}", idx);
+        }
+    }
+
+    let mut devices = Vec::<Karlson>::new();
+    for (dp, dc) in cdevs {
+        if cfg!(debug_assertions) {
+            println!("DEVICE {:?} {:?}", dp, dc);
+        }
+        let dev = Device::new(&dp, &dc);
+        if dev.propeller.is_none() {
+            println!("ERROR SKIP device, pwm not found for {:?}", dp);
+            continue;
+        }
+
+        devices.push(Karlson::new(dev, &dc));
+        if cfg!(debug_assertions) {
+            println!("ADD device {:?}", dp);
         }
     }
 
@@ -148,29 +190,40 @@ fn run_daemon(ctoml: &Value) {
     let mut t = SystemTime::now();
     let mut start = true;
     loop {
+        if karlsons.is_empty() && devices.is_empty() {
+            println!("(X_X) No devices was added to service. Just do nothing and sleep!");
+            if !idxx.is_empty() {
+                println!("Allowed propellers ids {:?}", idxx);
+            }
+            std::thread::sleep(std::time::Duration::from_secs(10));
+        }
+
         for k in &mut karlsons {
             k.spin();
         }
 
-        if karlsons.is_empty() {
-            println!("(X_X) No devices was added to service. Just do nothing and sleep!");
-            if !idxx.is_empty() {
-                println!("Allowed devices ids {:?}", idxx);
-            }
-            std::thread::sleep(std::time::Duration::from_secs(10));
+        for d in &mut devices {
+            d.spin();
         }
         
         for _ in 0..20 {
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
+        
         let n = SystemTime::now();
         let d = n.duration_since(t).ok()
             .map(|it| it.as_secs())
             .unwrap_or(0);
+        
         if d > 120 || start {
             start = false;
             t = n;
-            println!("STAT: {}", format_info(&karlsons));
+            if !karlsons.is_empty() {
+                println!("STAT: {}", format_info(&karlsons));
+            }
+            if !devices.is_empty() {
+                println!("STAT DEV: {}", format_info(&devices));
+            }
         }
     }
 }
