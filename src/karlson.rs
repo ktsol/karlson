@@ -14,7 +14,6 @@ use toml::value::Table;
 
 pub static DIR_DEVICES: &'static str = "/sys/class/hwmon";
 static TEMP_SCALE: usize = 1000;
-static PWM_STEP: isize = 5;
 
 
 pub fn read_file(p: &PathBuf) -> Result<String, Error> {
@@ -49,11 +48,14 @@ pub struct Settings {
     pwm_max: usize,
     pwm_min: usize,
     pwm_file: PathBuf,
+    pwm_step_up: isize,
+    pwm_step_down: isize,
     temp_ok: usize,
     temp_hot: usize,
     temp_crit: usize,
     temp_files: Vec<PathBuf>,
     queue_size: usize,
+    
     //temp_global: bool,
 }
 
@@ -91,6 +93,8 @@ pub struct Karlson {
     pub device: Device,
     jam: Jam,
     pwm_speed: usize,
+    pwm_up: isize,
+    pwm_down: isize,
     tlog: VecDeque<usize>,
     tlog_size: usize,
 }
@@ -104,6 +108,8 @@ impl Settings {
             pwm_max: 255,
             pwm_min: 0,
             pwm_file: PathBuf::from("pwm1"),
+            pwm_step_up: 5,
+            pwm_step_down: 2,
             temp_ok: 65,
             temp_hot: 75,
             temp_crit: 80,
@@ -130,6 +136,8 @@ impl Settings {
             pwm_ok: t.get("pwm_ok").unwrap_or(&Value::from(s.pwm_ok as i64)).as_integer().unwrap() as usize,
             pwm_max: t.get("pwm_max").unwrap_or(&Value::from(s.pwm_max as i64)).as_integer().unwrap() as usize,
             pwm_min: t.get("pwm_min").unwrap_or(&Value::from(s.pwm_min as i64)).as_integer().unwrap() as usize,
+            pwm_step_up: 5,
+            pwm_step_down: 2,
             temp_ok: t.get("temp_ok").unwrap_or(&Value::from(s.temp_ok as i64)).as_integer().unwrap() as usize,
             temp_hot: t.get("temp_hot").unwrap_or(&Value::from(s.temp_hot as i64)).as_integer().unwrap() as usize,
             temp_crit: t.get("temp_crit").unwrap_or(&Value::from(s.temp_crit as i64)).as_integer().unwrap() as usize,
@@ -141,28 +149,6 @@ impl Settings {
         }
     }
 }
-
-/*
-impl std::fmt::Debug for Settings {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Settings {{ pwm ok:{} max:{} min:{}; temp ok:{} hot:{} crit:{} }}", self.pwm_ok, self.pwm_max, self.pwm_min, self.temp_ok, self.temp_hot, self.temp_crit)
-    }
-}
-
-impl Clone for Settings {
-    fn clone(&self) -> Settings {
-        Settings {
-            pwm_ok: self.pwm_ok,
-            pwm_max: self.pwm_max,
-            pwm_min: self.pwm_min,
-            temp_ok: self.temp_ok,
-            temp_hot: self.temp_hot,
-            temp_crit: self.temp_crit,
-        }
-    }
-}
-*/
-
 
 
 impl Propeller {
@@ -201,14 +187,7 @@ impl Propeller {
         })
     }
 
-
-    /*
-    fn new_std(dir_path: &PathBuf) -> Option<Propeller> {
-        Propeller::new(dir_path, &Settings::new(&Value::from(false)))
-    }
-    */
     
-
     pub fn pwm(&self) -> usize {
         read_file_val(&self.pwm_file, 0)
     }
@@ -282,7 +261,9 @@ impl Device {
             return Vec::new();
         }
 
-        if cfg!(debug_assertions) {
+        //if cfg!(debug_assertions) {
+        #[cfg(debug_assertions)]
+        {
             println!("READING {:?}", base);
         }
         
@@ -304,7 +285,9 @@ impl Device {
             return Vec::new();
         }
 
-        if cfg!(debug_assertions) {
+        //if cfg!(debug_assertions) {
+        #[cfg(debug_assertions)]
+        {
             let temps:Vec<String> = self.temp_files
                 .iter()
                 .map(|ref p| read_file_val(p, 0) / TEMP_SCALE)
@@ -329,11 +312,18 @@ impl Karlson {
         } else {
             1
         };
+
+        // Set pwm speed normal level
+        let speed = d.propeller.clone()
+            .and_then(|p| p.pwm_set(s.pwm_ok).ok().or_else(|| Some(p.pwm())))
+            .unwrap_or(0);
         
         Karlson {
             tlog: VecDeque::new(),
             tlog_size: d.queue_size * tfiles,
-            pwm_speed: d.propeller.clone().and_then(|v| Some(v.pwm())).unwrap_or(0),
+            pwm_speed: speed,
+            pwm_up: s.pwm_step_up,
+            pwm_down: s.pwm_step_down,
             device: d,
             jam: Jam {
                 pwm_ok: s.pwm_ok,
@@ -365,12 +355,12 @@ impl Karlson {
             return (0, 0);
         }
 
-        let sum:usize = self.tlog.iter().sum();
-        return (tmax, ( sum as f64 / self.tlog.len() as f64).round() as usize);
+        let lmax:usize = self.tlog.iter().max().unwrap_or(&(0 as usize)).clone();
+        return (tmax, lmax);
     }
-
     
-    fn adjust_pwm(&mut self, tmax: usize, tavg: usize) {
+
+    fn adjust_pwm(&mut self, tmax: usize, tlog_max: usize) {
         if tmax <= 0 {
             println!("ERROR temparature is {}C for device at {}",
                      tmax,
@@ -380,32 +370,34 @@ impl Karlson {
         }
 
         let pwm_now = self.pwm_speed as isize;
+        let pdown = self.pwm_down;
+        let pup = self.pwm_up;
 
         if tmax <= self.jam.temp_ok {
             // Not hot at all. Only decrease temp here
-            if tmax < self.jam.temp_ok {
-                if self.jam.temp_ok as isize - tavg as isize > 1 {
-                    self.pwm_update(pwm_now - PWM_STEP, tmax);
-                } else if self.pwm_speed > self.jam.pwm_ok {
-                    self.pwm_update(pwm_now - PWM_STEP, tmax);
+            if tmax <= self.jam.temp_ok {
+                if self.jam.temp_ok as isize - tlog_max as isize > 1 {
+                    self.pwm_update(pwm_now - pdown, tmax);
+                } else if self.pwm_near(self.jam.pwm_ok, self.pwm_up) > 0 {
+                    self.pwm_update(pwm_now - pdown, tmax);
                 }
             }
         } else if tmax > self.jam.temp_ok && tmax < self.jam.temp_hot {
             // In this interval JUST normalize pwm up to OK level
-            if self.pwm_speed < self.jam.pwm_ok {
-                self.pwm_update(pwm_now + PWM_STEP, tmax);
+            if self.pwm_near(self.jam.pwm_ok, self.pwm_up) < 0 {
+                self.pwm_update(pwm_now + pup, tmax);
             }
-            if self.pwm_speed > self.jam.pwm_ok && self.jam.temp_hot as isize - tavg as isize > 1 {
-                self.pwm_update(pwm_now - PWM_STEP, tmax);
+            if self.pwm_near(self.jam.pwm_ok, self.pwm_up) > 0 && self.jam.temp_hot as isize - tlog_max as isize > 1 {
+                self.pwm_update(pwm_now - pdown, tmax);
             }
         } else {
             // Hot temp increase pwm only
-            if self.pwm_speed < self.jam.pwm_ok {
+            if self.pwm_near(self.jam.pwm_ok, self.pwm_up) < 0 {
                 // Just in case
                 let pwm_ok = self.jam.pwm_ok;
-                self.pwm_update(pwm_ok as isize + PWM_STEP * 10, tmax);
+                self.pwm_update(pwm_ok as isize + pup * 4, tmax);
             } else {
-                self.pwm_update(pwm_now + PWM_STEP * 2, tmax);
+                self.pwm_update(pwm_now + pup * 2, tmax);
             }
         }
 
@@ -413,6 +405,17 @@ impl Karlson {
             // If super hot, just set PWM at max
             let m = self.device.clone().propeller.unwrap().pwm_max;
             self.pwm_update(m.clone() as isize, tmax);
+        }
+    }
+
+    
+    fn pwm_near(&self, val:usize, delta_up: isize) -> isize {
+        if self.pwm_speed < val {
+            return -1
+        } else if self.pwm_speed >= val && (self.pwm_speed as isize) < ((val as isize) + delta_up) {
+            return 0
+        } else {
+            return 1
         }
     }
 
@@ -461,16 +464,17 @@ impl Karlson {
             return
         }
 
-        let (tmax, tavg) = self.load_temp();
+        let (tmax, tlog_max) = self.load_temp();
 
-        //#[cfg(debug_assertions)]
-        if cfg!(debug_assertions) {
+        //if cfg!(debug_assertions) {
+        #[cfg(debug_assertions)]
+        {
             println!("{}({}) TEMP:{}C ok:{}C hot:{}C PWM:{} ok:{}",
                      self.device.dir_name, self.device.name,
                      tmax, self.jam.temp_ok, self.jam.temp_hot,
                      self.pwm_speed, self.jam.pwm_ok);
         }
 
-        self.adjust_pwm(tmax, tavg);
+        self.adjust_pwm(tmax, tlog_max);
     }
 }

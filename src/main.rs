@@ -139,8 +139,9 @@ fn run_daemon(ctoml: &Value) {
     paths.sort_by_key(|d| d.path());
 
 
-
-    if cfg!(debug_assertions) {
+    //if cfg!(debug_assertions) {
+    #[cfg(debug_assertions)]
+    {
         println!("{:?}", idxx);
     }
 
@@ -154,7 +155,9 @@ fn run_daemon(ctoml: &Value) {
         }
 
         let c: &Settings  = cidx.get(&idx).unwrap_or(&cdef);
-        if cfg!(debug_assertions) {
+        //if cfg!(debug_assertions) {
+        #[cfg(debug_assertions)]
+        {
             println!("PROPELLER {} {:?} {:?}", idx, p.path(), c);
         }
         let dev = Device::new(&p.path(), &c);
@@ -164,14 +167,18 @@ fn run_daemon(ctoml: &Value) {
         }
         
         karlsons.push(Karlson::new(dev, &c));
-        if cfg!(debug_assertions) {
+        //if cfg!(debug_assertions) {
+        #[cfg(debug_assertions)]
+        {
             println!("ADD propeller {}", idx);
         }
     }
 
     let mut devices = Vec::<Karlson>::new();
     for (dp, dc) in cdevs {
-        if cfg!(debug_assertions) {
+        //if cfg!(debug_assertions) {
+        #[cfg(debug_assertions)]
+        {
             println!("DEVICE {:?} {:?}", dp, dc);
         }
         let dev = Device::new(&dp, &dc);
@@ -181,7 +188,9 @@ fn run_daemon(ctoml: &Value) {
         }
 
         devices.push(Karlson::new(dev, &dc));
-        if cfg!(debug_assertions) {
+        //if cfg!(debug_assertions) {
+        #[cfg(debug_assertions)]
+        {
             println!("ADD device {:?}", dp);
         }
     }
@@ -197,13 +206,13 @@ fn run_daemon(ctoml: &Value) {
             }
             std::thread::sleep(std::time::Duration::from_secs(10));
         }
+        
+        for d in &mut devices {
+            d.spin();
+        }
 
         for k in &mut karlsons {
             k.spin();
-        }
-
-        for d in &mut devices {
-            d.spin();
         }
         
         for _ in 0..20 {
