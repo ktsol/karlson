@@ -164,8 +164,8 @@ impl Settings {
             } else {
                 s.sys_pwm_file.clone()
             },
-            sys_temp_files: if t.contains_key("temp_files") {
-                t["temp_files"]
+            sys_temp_files: if t.contains_key("sys_temp_input") {
+                t["sys_temp_input"]
                     .as_array()
                     .unwrap_or(&Vec::<Value>::new())
                     .iter()
@@ -175,8 +175,8 @@ impl Settings {
             } else {
                 s.sys_temp_files.clone()
             },
-            nv_temp_ids: if t.contains_key("nv_temp_ids") {
-                t["nv_temp_ids"]
+            nv_temp_ids: if t.contains_key("nv_temp_input") {
+                t["nv_temp_input"]
                     .as_array()
                     .unwrap_or(&Vec::<Value>::new())
                     .iter()

@@ -174,7 +174,7 @@ impl Propeller for PropellerSys {
         match fopts.open(self.pfile.clone()) {
             Ok(mut f) => {
                 match write!(f, "{}", nval) {
-                    Ok(_) => Ok(nval),
+                    Ok(_) => Ok(scale_from_sys(nval)),
                     Err(e) => Err(format!(
                         "Can not write {} to {} {}",
                         nval,

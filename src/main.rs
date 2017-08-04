@@ -126,7 +126,7 @@ fn init_karlsons(tconf: &Value, set_def: &Settings) -> Vec<Karlson> {
 
     #[cfg(debug_assertions)]
     {
-        println!("DEVICES {:?}", devs);
+        println!("KARLSONS {:?}", devs);
     }
 
     for d in devs {
@@ -170,6 +170,7 @@ fn init_devices(tconf: &Value, set_def: &Settings) -> Vec<Karlson> {
     let cfgdev = tconf.get("devices");
 
     if cfgdev.is_none() {
+        println!("[[devices]] configuration is empty");
         return devices;
     }
 
@@ -181,6 +182,7 @@ fn init_devices(tconf: &Value, set_def: &Settings) -> Vec<Karlson> {
     let mut id: i32 = 0;
     for c in dcfg {
         if !c.is_table() {
+            println!("ERROR! [[devices]] #{} block is not table", id);
             continue;
         }
         let t = c.as_table().unwrap();
@@ -195,6 +197,11 @@ fn init_devices(tconf: &Value, set_def: &Settings) -> Vec<Karlson> {
         let dev_set = Settings::from_with(&c, set_def);
         devices.push(Karlson::new_device(id, &dev_set));
         id += 1;
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        println!("DEVICES {:?}", devices);
     }
     devices
 }

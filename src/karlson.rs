@@ -8,23 +8,6 @@ pub use core::Device;
 use dsys;
 use dnv;
 
-/* #[derive(Debug, Clone)]
-pub struct Settings {
-    pwm_ok: usize,
-    pwm_max: usize,
-    pwm_min: usize,
-    pwm_file: PathBuf,
-    pwm_step_up: isize,
-    pwm_step_down: isize,
-    temp_ok: usize,
-    temp_hot: usize,
-    temp_crit: usize,
-    temp_files: Vec<PathBuf>,
-    queue_size: usize,
-    //temp_global: bool,
-} */
-
-
 
 #[derive(Debug, Clone)]
 struct Jam {
@@ -100,72 +83,6 @@ pub fn list_devices() -> Vec<Device> {
 //     }
 // }
 
-/*
-impl Device {
-    pub fn new_std(dir: &PathBuf) -> Device {
-        Device::new(dir, &Settings::new(&Value::from(false)))
-    }
-
-    pub fn new(dir: &PathBuf, s: &Settings) -> Device {
-        let mut npath = dir.clone();
-        npath.push("name");
-
-
-        let tpath = dir.clone();
-
-        let tmps = s.temp_files
-            .iter()
-            .map(|p| tpath.clone().join(p).canonicalize())
-            .filter(|p| p.is_ok())
-            .map(|p| p.unwrap())
-            .collect::<Vec<PathBuf>>();
-
-        if tmps.is_empty() && cfg!(debug_assertions) {
-            println!(
-                "ERROR TEMP files not available temp_files {:?}",
-                s.temp_files
-            );
-        }
-
-        let fval = read_file(&npath).unwrap_or(String::from("N/A"));
-
-        Device {
-            name: String::from(fval.trim()),
-            dir_name: String::from(dir.file_name().and_then(|v| v.to_str()).unwrap_or("N/A")),
-            dir_path: dir.clone(),
-            temp_files: tmps,
-            queue_size: s.queue_size,
-            propeller: Propeller::new(dir, s),
-        }
-    }
-
-
-    /// Return temps readings from all inputs
-    pub fn temps(&self) -> Vec<usize> {
-        if self.temp_files.is_empty() {
-            return Vec::new();
-        }
-
-        //if cfg!(debug_assertions) {
-        #[cfg(debug_assertions)]
-        {
-            let temps: Vec<String> = self.temp_files
-                .iter()
-                .map(|ref p| read_file_val(p, 0) / TEMP_SCALE)
-                .map(|it| format!("{}C", it))
-                .collect();
-
-            println!("DEBUG temps {} for {:?}", temps.join(", "), self.dir_path);
-        }
-
-        self.temp_files
-            .iter()
-            .map(|ref p| read_file_val(p, 0) / TEMP_SCALE)
-            .collect()
-    }
-}
-*/
-
 impl Karlson {
     pub fn new(dev: &Device, s: &Settings) -> Karlson {
         let device = match dev.dev_type.as_ref() {
@@ -227,7 +144,7 @@ impl Karlson {
         Karlson::new(
             &Device {
                 id: id,
-                dev_type: String::from("hybrid"),
+                dev_type: String::from("dev"),
                 name: s.name.clone().unwrap_or_default(),
                 termometers: terms,
                 propeller: dsys::sys_propeller_from(&s.sys_pwm_file, s).ok(),
@@ -352,21 +269,15 @@ impl Karlson {
                 let ud = if self.pwm_speed > p { "DOWN" } else { "UP" };
                 self.pwm_speed = p;
                 if updated {
-                    // println!(
-                    //     "{} PWM {} to {} temp {}C {}",
-                    //     self.device.dir_name,
-                    //     ud,
-                    //     p,
-                    //     temp,
-                    //     self.device
-                    //         .propeller
-                    //         .clone()
-                    //         .unwrap()
-                    //         .pwm_file
-                    //         .to_str()
-                    //         .as_ref()
-                    //         .unwrap()
-                    // );
+                    println!(
+                        "{}#{} PWM {} to {}% temp {}C -> {}",
+                        self.dev.dev_type,
+                        self.dev.id,
+                        ud,
+                        p,
+                        temp,
+                        self.dev.name
+                    );
                 }
             }
             Err(e) => println!("ERROR {}", e),
@@ -407,7 +318,7 @@ impl Karlson {
         #[cfg(debug_assertions)]
         {
             println!(
-                "{}#{} TEMP:{}C ok:{}C hot:{}C PWM:{} ok:{} -> {}",
+                "{}#{} TEMP:{}C ({}<->{}) PWM:{}% ({}%) :: {}",
                 self.dev.dev_type,
                 self.dev.id,
                 tmax,
