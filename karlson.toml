@@ -1,12 +1,16 @@
-# Allowed devices indexes others wil be ignored
-# You have to provide here idexes of devices to use
+# Allowed devices indexes for sys devices others wil be ignored
+# You have to provide here idexes of devices from /sys/class/hwmon to use
 # Empty value will skip auto detection, and [[propellers]] section would not work
-idx=[0,1,5]
+#idx=[0,1,5]
 
-# Default fan speed for all propellers
-pwm_ok = 90
-pwm_min = 0 # Optional
-pwm_max = 255 # Optional
+# Allowed nvidia GPUS
+# Other will be ignored
+nv_idx=[0,1,5]
+
+#FAN speed in percents
+pwm_ok = 60 # Default fan speed for all propellers
+#pwm_min = 0 # Optional
+#pwm_max = 100 # Optional
 
 # Default temperature settings
 temp_ok = 65
@@ -18,6 +22,7 @@ temp_crit = 85
 # Would override default settings
 [[propellers]]
 idx = [0,3] # Required value - indexes of devices you want apply this settings to
+type = "nv" #for Nvidia devices or, if not provided, system device indexes will be used
 pwm_ok = 70
 temp_ok=69
 
@@ -32,15 +37,17 @@ temp_hot = 60
 # Custom devices you can create as many as you like
 # this devices may have custom temperature inputs and pwm files
 [[devices]]
-path = '/sys/class/hwmon/hwmon99' # Required - device path (where PWM file is located)
-pwm_ok = 100
-pwm_file = 'pwm2' # PWM file name
+name="Device Name"
+# Absolute path to PWM file
+pwm_file="/sys/class/hwmon/hwmon33/pwm2"
+pwm_ok = 75
 
-# Temperature files to watch (absolute paths)
-# You can add as many as you like
 # Max temperature will be used as trigger to increase PWM
 # AVG for last N rounds will be used to decrease PWM
-temp_files=['temp1_input', '/sys/class/hwmon/hwmon0/temp1_input', '/sys/class/hwmon/hwmon1/temp2_input']
+# Absolute paths to temp*_input files to watch
+#sys_temp_input=['/sys/class/hwmon/hwmon0/temp1_input', '/sys/class/hwmon/hwmon1/temp2_input']
+# Int ID of Nvidia devices to watch temperature
+#nv_temp_input=[1,2]
 
 
 
