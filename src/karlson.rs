@@ -22,9 +22,9 @@ pub struct Karlson {
     // pub name: String,
     // p: Box<Propeller>,
     // ts: Vec<Box<Thermometer>>,
-    dev: Device,
+    pub dev: Device,
     jam: Jam,
-    pwm_speed: usize,
+    pub pwm_speed: usize,
     pwm_up: isize,
     pwm_down: isize,
     tlog: VecDeque<usize>,
@@ -190,11 +190,6 @@ impl Karlson {
             return;
         }
 
-        // let old_pwm = self.pwm_speed;
-        // #[cfg(debug_assertions)]
-        // {
-        //     println!("PWM before {} now {}", old_pwm, self.pwm_speed);
-        // }
         let pwm_now = self.pwm_speed as isize;
         let pdown = self.pwm_down;
         let pup = self.pwm_up;
@@ -248,6 +243,11 @@ impl Karlson {
 
 
     fn pwm_update(&mut self, pwm: isize, temp: usize) {
+        let pwm_val = if pwm > 0 {
+            if pwm > 100 { 100 } else { pwm as usize }
+        } else {
+            0
+        };
         let ref prop = &self.dev.propeller;
         if prop.is_none() {
             println!(
@@ -257,28 +257,28 @@ impl Karlson {
             );
             return;
         }
-        if pwm == self.pwm_speed as isize || pwm < 0 {
+        //  || pwm_val < 0
+        if pwm_val == self.pwm_speed as usize {
             return;
         }
 
-        let pwm_set = if pwm > 0 { pwm as usize } else { 0 };
 
-        match prop.as_ref().unwrap().pwm_set(pwm_set) {
+        match prop.as_ref().unwrap().pwm_set(pwm_val) {
             Ok(p) => {
-                let updated = if p != self.pwm_speed { true } else { false };
-                let ud = if self.pwm_speed > p { "DOWN" } else { "UP" };
+                // let updated = if p != self.pwm_speed { true } else { false };
+                let ud = if self.pwm_speed > pwm_val { "DOWN" } else { "UP" };
                 self.pwm_speed = p;
-                if updated {
-                    println!(
-                        "{}#{} PWM {} to {}% temp {}C -> {}",
-                        self.dev.dev_type,
-                        self.dev.id,
-                        ud,
-                        p,
-                        temp,
-                        self.dev.name
-                    );
-                }
+                // if updated {
+                println!(
+                    "{}#{} PWM {} to {}% temp {}C -> {}",
+                    self.dev.dev_type,
+                    self.dev.id,
+                    ud,
+                    p,
+                    temp,
+                    self.dev.name
+                );
+                // }
             }
             Err(e) => println!("ERROR {}", e),
         }
@@ -318,7 +318,7 @@ impl Karlson {
         #[cfg(debug_assertions)]
         {
             println!(
-                "{}#{} TEMP:{}C ({}<->{}) PWM:{}% ({}%) :: {}",
+                "{}#{} TEMP:{}C ({}..{}) PWM:{}% ({}%) :: {}",
                 self.dev.dev_type,
                 self.dev.id,
                 tmax,

@@ -83,19 +83,23 @@ fn settings_propellers(
     (scfg, nvcfg)
 }
 
-/*
-fn format_info(devs:&Vec<Karlson>) -> String{
+fn format_info(devs: &Vec<Karlson>) -> String {
     let d: usize = 0;
-    let forms:Vec<String> = devs.iter()
-        .map(|it| format!("{}:{} {}C",
-                         it.device.dir_name,
-                         it.device.propeller.clone().map(|v| v.pwm() as isize).unwrap_or(-1),
-                          it.device.temps().iter().max().unwrap_or(&d))
-        ).collect();
-    
-    forms.join(", ")
+    let forms: Vec<String> = devs.iter()
+        .map(|it| {
+            format!(
+                "  {}#{} {}C {}% :: {}",
+                it.dev.id,
+                it.dev.dev_type,
+                it.dev.termometers.iter().map(|t| t.temp()).max().unwrap_or(d),
+                it.pwm_speed,
+                it.dev.name,
+            )
+        })
+        .collect();
+
+    forms.join("\n")
 }
-*/
 
 fn extract_ids(tconf: &Value, property_name: &str) -> HashSet<i32> {
     let empty_vec = Vec::new();
@@ -234,12 +238,12 @@ fn loop_daemon(mut karlsons: Vec<Karlson>, mut devices: Vec<Karlson>) {
         if d > 120 || start {
             start = false;
             t = n;
-            // if !karlsons.is_empty() {
-            //     println!("STAT: {}", format_info(&karlsons));
-            // }
-            // if !devices.is_empty() {
-            //     println!("STAT DEV: {}", format_info(&devices));
-            // }
+            if !karlsons.is_empty() {
+                println!("KARLSONS:\n{}", format_info(&karlsons));
+            }
+            if !devices.is_empty() {
+                println!("DEVICES:\n{}", format_info(&devices));
+            }
         }
     }
 }

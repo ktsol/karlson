@@ -3,6 +3,9 @@ name = "karlson"
 version = "0.1.0"
 authors = ["rumatoest"]
 
+[profile.release]
+lto = true
+
 [dependencies]
 regex = "0.2.2"
 toml = "0.4"

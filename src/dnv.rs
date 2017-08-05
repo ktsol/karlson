@@ -225,5 +225,7 @@ impl Propeller for PropellerNv {
         }
     }
 
-    fn configure(&mut self, set: &Settings) {}
+    fn configure(&mut self, set: &Settings) {
+        self.min = set.pwm_min;
+    }
 }
