@@ -104,39 +104,6 @@ impl Thermometer for ThermometerNv {
 }
 
 
-/*
-
-  Attribute 'GPUFanControlState' (miner3:2[gpu:0]): 0.
-    'GPUFanControlState' is a boolean attribute; valid values are: 1 (on/true) and 0 (off/false).
-    'GPUFanControlState' can use the following target types: GPU.
-
-*/
-
-impl PropellerNv {
-    /// Return true only if GPUFanControlState or return false in other cases.
-    fn fan_state(&self) -> bool {
-        let rout = Command::new("nvidia-settings")
-            .arg("-q")
-            .arg(format!("[gpu:{}]/GPUFanControlState", self.id))
-            .output();
-
-        let ss = format!("[gpu:{}]): 1", self.id);
-
-        if rout.is_ok() {
-            let resout = rout.unwrap();
-            let out = String::from(String::from_utf8_lossy(&resout.stdout));
-            if out.contains(ss.as_str()) {
-                true
-            } else {
-                false
-            }
-        } else {
-            println!("ERROR: NV#{} Can not read GPUFanControlState", self.id);
-            false
-        }
-    }
-}
-
 impl Propeller for PropellerNv {
     fn box_clone(&self) -> Box<Propeller> {
         Box::new((*self).clone())
@@ -180,16 +147,10 @@ impl Propeller for PropellerNv {
         }
 
         let mut cmd = Command::new("nvidia-settings");
-        if !self.fan_state() {
-            cmd.arg("-a").arg(format!(
-                "[gpu:{}]/GPUFanControlState=1",
-                self.id
-            ));
-            #[cfg(debug_assertions)]
-            {
-                println!("NV#{} update with GPUFanControlState=1", self.id);
-            }
-        }
+        cmd.arg("-a").arg(format!(
+            "[gpu:{}]/GPUFanControlState=1",
+            self.id
+        ));
 
         let out = cmd.arg("-a")
             .arg(format!("[fan:{}]/GPUTargetFanSpeed={}", self.id, nval))

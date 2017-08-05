@@ -206,3 +206,43 @@ impl Thermometer for ThermometerSys {
         read_file_val_or(&self.temp_file, 0) / TEMP_SCALE
     }
 }
+
+
+// Automatically load max-min limit for PWM
+// impl Propeller {
+//     fn new(dir_path: &PathBuf, s: &Settings) -> Option<Propeller> {
+//         let mut path_pwm = dir_path.clone();
+//         path_pwm.push(s.pwm_file.clone());
+
+//         if !path_pwm.is_file() {
+//             println!("ERROR PWM file not available {:?}", path_pwm);
+//             return None;
+//         }
+
+//         let dname = path_pwm.file_name().unwrap().to_string_lossy();
+//         let mut path_pmin = dir_path.clone();
+//         path_pmin.push(format!("{}_min", dname));
+
+//         let mut path_pmax = dir_path.clone();
+//         path_pmax.push(format!("{}_max", dname));
+
+//         let mut pmin = if path_pmin.is_file() {
+//             read_file_val(&path_pmin, s.pwm_min)
+//         } else {
+//             s.pwm_min
+//         };
+//         let mut pmax = if path_pmax.is_file() {
+//             read_file_val(&path_pmax, s.pwm_max)
+//         } else {
+//             s.pwm_max
+//         };
+
+//         if pmin < 0 {
+//             pmin = s.pwm_min;
+//         }
+
+//         if pmax < pmin {
+//             pmax = s.pwm_max;
+//         }
+//     }
+// }
