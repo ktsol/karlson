@@ -130,7 +130,7 @@ fn init_karlsons(tconf: &Value, set_def: &Settings) -> Vec<Karlson> {
 
     #[cfg(debug_assertions)]
     {
-        println!("KARLSONS {:?}", devs);
+        println!("PROPELLERS {:?}", devs);
     }
 
     for d in devs {
@@ -228,7 +228,7 @@ fn loop_daemon(mut karlsons: Vec<Karlson>, mut devices: Vec<Karlson>) {
             k.spin();
         }
 
-        for _ in 0..20 {
+        for _ in 0..10 {
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
 
@@ -239,7 +239,7 @@ fn loop_daemon(mut karlsons: Vec<Karlson>, mut devices: Vec<Karlson>) {
             start = false;
             t = n;
             if !karlsons.is_empty() {
-                println!("KARLSONS:\n{}", format_info(&karlsons));
+                println!("PROPELLERS:\n{}", format_info(&karlsons));
             }
             if !devices.is_empty() {
                 println!("DEVICES:\n{}", format_info(&devices));

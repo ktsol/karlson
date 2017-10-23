@@ -1,5 +1,6 @@
 extern crate std;
 use std::collections::VecDeque;
+use std::time::SystemTime;
 
 use core::Settings;
 use core::Thermometer;
@@ -29,6 +30,7 @@ pub struct Karlson {
     pwm_down: isize,
     tlog: VecDeque<usize>,
     tlog_size: usize,
+    updated: SystemTime,
 }
 
 pub fn list_devices() -> Vec<Device> {
@@ -74,6 +76,7 @@ impl Karlson {
                 temp_hot: s.temp_hot,
                 temp_crit: s.temp_crit,
             },
+            updated: SystemTime::now(),
         }
     }
 
@@ -135,14 +138,55 @@ impl Karlson {
         return (tmax, lmax);
     }
 
+    /// Check if temperature in log decreasing
+    /// True if recent teperature is greater on 2C then oldest one
+    fn temp_decreasing(&self) -> bool {
+        let mut i = 0;
+        let mut prev_temp: usize = 100;
+        let mut start_temp: usize = 100;
+        for t in self.tlog.iter() {
+            if t > &prev_temp {
+                return false;
+            }
+            prev_temp = t.clone();
+            if i == 0 {
+                start_temp = t.clone();
+            }
+            i += 1;
+        }
+
+        prev_temp - start_temp > 2
+    }
+
+    /// Check if temperature in log increasing
+    /// True if oldest teperature is greater on 2C then recent one
+    fn temp_increasing(&self) -> bool {
+        let mut up = false;
+        let mut i = 0;
+        let mut prev_temp: usize = 0;
+        let mut last_temp: usize = 0;
+        for t in self.tlog.iter() {
+            if t < &prev_temp {
+                up = false;
+            }
+            prev_temp = t.clone();
+            if i == 0 {
+                last_temp = t.clone();
+            }
+            i += 1;
+        }
+
+        if up { last_temp - prev_temp > 2 } else { false }
+    }
 
     fn adjust_pwm(&mut self, tmax: usize, tlog_max: usize) {
         if tmax <= 0 {
-            // println!(
-            //     "ERROR temparature is {}C for device at {}",
-            //     tmax,
-            //     self.device.dir_path.to_string_lossy().as_ref()
-            // );
+            println!(
+                "ERROR temparature is {}C for device {}#{}",
+                tmax,
+                self.dev.dev_type,
+                self.dev.id
+            );
             return;
         }
 
@@ -152,12 +196,41 @@ impl Karlson {
 
         if tmax <= self.jam.temp_ok {
             // Not hot at all. Only decrease temp here
-            if tmax <= self.jam.temp_ok {
-                if self.jam.temp_ok as isize - tlog_max as isize > 1 {
-                    self.pwm_update(pwm_now - pdown, tmax);
-                } else if self.pwm_near(self.jam.pwm_ok, self.pwm_up) > 0 {
-                    self.pwm_update(pwm_now - pdown, tmax);
+            let duration = SystemTime::now().duration_since(self.updated);
+            if duration.is_ok() {
+                let sec = duration.unwrap().as_secs();
+                #[cfg(debug_assertions)]
+                {
+                    println!(
+                        "{}#{} TEMP:{}C ({}..{}) duration sec {} decreasing {} increasing {}",
+                        self.dev.dev_type,
+                        self.dev.id,
+                        tmax,
+                        self.jam.temp_ok,
+                        self.jam.temp_hot,
+                        sec,
+                        self.temp_decreasing(),
+                        self.temp_increasing()
+                    );
                 }
+
+                if self.tlog_size == 1 {
+                    // Single temperature input
+                    if sec > 120 && self.temp_decreasing() {
+                        self.pwm_update(pwm_now - pdown, tmax);
+                    }
+
+                    if self.temp_increasing() && self.pwm_near(self.jam.pwm_ok, pup) < 0 {
+                        self.pwm_update(pwm_now + pup, tmax);
+                    }
+                } else {
+                    // For devices with many temperature inputs
+                    if sec > 120 && self.jam.temp_ok as isize - tlog_max as isize > 2 {
+                        self.pwm_update(pwm_now - pdown, tmax);
+                    }
+                }
+            } else {
+                println!("ERROR {}", duration.err().unwrap());
             }
         } else if tmax > self.jam.temp_ok && tmax < self.jam.temp_hot {
             // In this interval JUST normalize pwm up to OK level
@@ -186,7 +259,8 @@ impl Karlson {
         }
     }
 
-
+    /// Check if current PWM speed is near provided value within delta range.
+    /// Return -1 if PWM less than range 0 - within range 1 - greater than range
     fn pwm_near(&self, val: usize, delta_up: isize) -> isize {
         if self.pwm_speed < val {
             return -1;
@@ -221,8 +295,13 @@ impl Karlson {
 
         match prop.as_ref().unwrap().pwm_set(pwm_val) {
             Ok(p) => {
+                self.updated = SystemTime::now();
                 // let updated = if p != self.pwm_speed { true } else { false };
-                let ud = if self.pwm_speed > pwm_val { "DOWN" } else { "UP" };
+                let ud = if self.pwm_speed > pwm_val {
+                    "DOWN"
+                } else {
+                    "UP"
+                };
                 self.pwm_speed = p;
                 // if updated {
                 println!(
