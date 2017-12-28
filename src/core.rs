@@ -103,7 +103,7 @@ impl Settings {
                 //pwm_max_abs: 255,
                 dev_type: String::from("sys"),
                 pwm_ok: 60,
-                pwm_min: 0,
+                pwm_min: 21,
                 pwm_step_up: 2,
                 pwm_step_down: 1,
                 temp_ok: 65,

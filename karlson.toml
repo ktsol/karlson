@@ -9,7 +9,7 @@ nv_idx=[0,1,5]
 
 #FAN speed in percents
 pwm_ok = 60 # Default fan speed for all propellers
-#pwm_min = 0 # Optional
+#pwm_min = 21 # Optional
 #pwm_max = 100 # Optional
 
 # Default temperature settings
