@@ -131,3 +131,7 @@ systemctl enable karlson.service
 
 After you have configured service as described above,
 you can read karlson logs using `journalctl -fu karlson`
+
+# License
+
+This software is free for personal use only. More details can be found in LICENSE.txt file.

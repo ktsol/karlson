@@ -1,0 +1,12 @@
+Copyright (C) 2018 rumatoest at github.com
+
+Any individuals are permitted to use and modify source code for
+personal usage without limitations. There are no limitations for 
+using compiled/binary version of this software with or without
+source code modifications made by inidividual itself.
+
+Using source code or binaries by companes requires approval 
+from copyright holder.
+
+You can not distribute this code, binaries or it's modifications 
+under your name without approval from copyright holder.
